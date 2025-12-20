@@ -60,6 +60,8 @@ pub struct RequestDescription<'b, T: RequestTarget> {
 #[derive(Display)]
 pub enum SessionAcceptAction {
     Accept,
+    /// Accept the session and include additional headers in the 200 response.
+    AcceptWith(Vec<Header>),
     Reject(Vec<Header>),
 }
 
@@ -1334,10 +1336,13 @@ impl Http3Connection {
                 }
                 Ok(())
             }
-            (Some(s), Some(_r), SessionAcceptAction::Accept) => {
+            (Some(s), Some(_r), SessionAcceptAction::Accept | SessionAcceptAction::AcceptWith(_)) => {
                 let mut response_headers = vec![Header::new(":status", "200")];
                 if connect_type == ExtendedConnectType::ConnectUdp {
                     response_headers.push(Header::new("capsule-protocol", "?1"));
+                }
+                if let SessionAcceptAction::AcceptWith(extra) = accept_res {
+                    response_headers.extend_from_slice(extra);
                 }
 
                 if s.http_stream()
@@ -1397,6 +1402,31 @@ impl Http3Connection {
                 })
             })
             .collect()
+    }
+
+    /// Get the negotiated protocol for a WebTransport session.
+    ///
+    /// Returns `Ok(None)` if no protocol was negotiated.
+    /// Returns an error if the session does not exist or is not a WebTransport session.
+	
+    pub(crate) fn webtransport_session_protocol(
+        &self,
+        session_id: StreamId,
+    ) -> Res<Option<String>> {
+      // First, ensure this is a WebTransport extended CONNECT session.
+      let is_webtransport = self
+          .recv_streams
+          .get(&session_id)
+          .and_then(|s| s.extended_connect_session())
+          .map(|sess| sess.borrow().connect_type() == ExtendedConnectType::WebTransport)
+          .unwrap_or(false);
+        if !is_webtransport {
+          return Err(Error::InvalidStreamId);
+      }
+      Ok(self.send_streams
+            .get(&session_id)
+            .filter(|s| s.stream_type() == Http3StreamType::ExtendedConnect)
+            .and_then(|s| s.session_protocol()))
     }
 
     pub(crate) fn connect_udp_close_session(

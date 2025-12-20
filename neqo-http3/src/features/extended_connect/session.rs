@@ -13,6 +13,8 @@ use std::{
     time::Instant,
 };
 
+use sfv::{BareItem, Item, Parser};
+
 use neqo_common::{Bytes, Encoder, Header, MessageType, Role, qdebug, qtrace};
 use neqo_transport::{AppError, Connection, DatagramTracking, StreamId};
 
@@ -287,6 +289,20 @@ impl Session {
                         );
                         State::Done
                     } else {
+                        let negotiated_protocol = headers
+                            .iter()
+                            .find(|h| h.name().eq_ignore_ascii_case("wt-protocol"))
+                            .and_then(|h| Parser::new(h.value()).parse::<Item>().ok())
+                            .and_then(|item| {
+                                if let BareItem::String(s) = item.bare_item {
+                                    Some(s.into())
+                                } else {
+                                    None
+                                }
+                            });
+
+                        self.protocol.set_protocol(negotiated_protocol);
+
                         self.events.session_start(
                             self.protocol.connect_type(),
                             self.id,
@@ -450,6 +466,10 @@ impl Stream for Rc<RefCell<Session>> {
     fn stream_type(&self) -> Http3StreamType {
         Http3StreamType::ExtendedConnect
     }
+
+    fn session_protocol(&self) -> Option<String> {
+        self.borrow().protocol.protocol().map(|s| s.to_string())
+    }
 }
 
 impl RecvStream for Rc<RefCell<Session>> {
@@ -580,6 +600,15 @@ pub(crate) trait Protocol: Debug + Display {
 
     fn take_sub_streams(&mut self) -> (HashSet<StreamId>, HashSet<StreamId>) {
         (HashSet::default(), HashSet::default())
+    }
+
+    fn set_protocol(&mut self, _protocol: Option<String>) {
+        // Default implementation does nothing
+    }
+
+    fn protocol(&self) -> Option<&str> {
+        // Default implementation returns None
+        None
     }
 
     fn write_datagram_prefix(&self, encoder: &mut Encoder);
