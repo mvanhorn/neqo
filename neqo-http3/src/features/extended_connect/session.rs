@@ -151,6 +151,11 @@ impl Session {
         })
     }
 
+    /// Returns the type of this extended CONNECT session.
+    pub(crate) fn connect_type(&self) -> ExtendedConnectType {
+        self.protocol.connect_type()
+    }
+
     /// # Errors
     ///
     /// The function can only fail if supplied headers are not valid http headers.
