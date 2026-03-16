@@ -627,7 +627,6 @@ trait SendStream: Stream {
     fn clear_send_group(&mut self) -> Res<()> {
         Err(Error::Unavailable)
     }
-
 }
 
 trait HttpSendStream: SendStream {
